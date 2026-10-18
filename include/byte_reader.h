@@ -16,4 +16,28 @@ bool byte_view_contains(
     size_t length
 );
 
+bool byte_view_read_u8(
+    const ByteView *view,
+    size_t offset,
+    uint8_t *result
+);
+
+bool byte_view_read_u16_le(
+    const ByteView *view,
+    size_t offset,
+    uint16_t *result
+);
+
+bool byte_view_read_u32_le(
+    const ByteView *view,
+    size_t offset,
+    uint32_t *result
+);
+
+bool byte_view_read_u64_le(
+    const ByteView *view,
+    size_t offset,
+    uint64_t *result
+);
+
 #endif
