@@ -4,8 +4,10 @@ SANITIZER_FLAGS = -fsanitize=address,undefined -fno-omit-frame-pointer
 
 .PHONY: test test-sanitize clean
 
-elfguard: src/main.c src/file_buffer.c include/file_buffer.h
-	$(CC) $(CFLAGS) src/main.c src/file_buffer.c -o elfguard
+elfguard: src/main.c src/file_buffer.c src/byte_reader.c src/elf_parser.c include/file_buffer.h include/byte_reader.h include/elf_parser.h
+	$(CC) $(CFLAGS) \
+		src/main.c src/file_buffer.c src/byte_reader.c src/elf_parser.c \
+		-o elfguard
 
 test_byte_reader: tests/unit/test_byte_reader.c src/byte_reader.c include/byte_reader.h
 	$(CC) $(CFLAGS) \
