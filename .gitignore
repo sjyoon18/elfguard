@@ -1,5 +1,7 @@
 /elfguard
 /test_byte_reader
 /test_byte_reader_sanitize
+/test_elf_parser
+/test_elf_parser_sanitize
 .DS_Store
 *.dSYM/

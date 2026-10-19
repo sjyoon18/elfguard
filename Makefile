@@ -17,12 +17,26 @@ test_byte_reader_sanitize: tests/unit/test_byte_reader.c src/byte_reader.c inclu
 		tests/unit/test_byte_reader.c src/byte_reader.c \
 		-o test_byte_reader_sanitize
 
-test: test_byte_reader
-	./test_byte_reader
+test_elf_parser: tests/unit/test_elf_parser.c src/elf_parser.c src/byte_reader.c include/elf_parser.h include/byte_reader.h
+	$(CC) $(CFLAGS) \
+		tests/unit/test_elf_parser.c \
+		src/elf_parser.c src/byte_reader.c \
+		-o test_elf_parser
 
-test-sanitize: test_byte_reader_sanitize
+test_elf_parser_sanitize: tests/unit/test_elf_parser.c src/elf_parser.c src/byte_reader.c include/elf_parser.h include/byte_reader.h
+	$(CC) $(CFLAGS) $(SANITIZER_FLAGS) \
+		tests/unit/test_elf_parser.c \
+		src/elf_parser.c src/byte_reader.c \
+		-o test_elf_parser_sanitize
+
+test: test_byte_reader test_elf_parser
+	./test_byte_reader
+	./test_elf_parser
+
+test-sanitize: test_byte_reader_sanitize test_elf_parser_sanitize
 	./test_byte_reader_sanitize
+	./test_elf_parser_sanitize
 
 clean:
-	rm -f elfguard test_byte_reader test_byte_reader_sanitize
-	rm -rf elfguard.dSYM test_byte_reader.dSYM test_byte_reader_sanitize.dSYM
+	rm -f elfguard test_byte_reader test_byte_reader_sanitize test_elf_parser test_elf_parser_sanitize
+	rm -rf elfguard.dSYM test_byte_reader.dSYM test_byte_reader_sanitize.dSYM test_elf_parser.dSYM test_elf_parser_sanitize.dSYM
