@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-int main(void) {
+static void test_identification(void) {
     uint8_t identification[16] = {
         0x7f, 'E', 'L', 'F',
         0x02, 0x01, 0x01, 0x00,
@@ -68,7 +68,146 @@ int main(void) {
     identification[6] = 0x01;
 
     assert(elf_validate_identification(&view) == ELF_IDENT_OK);
+}
 
-    printf("All ELF identification tests passed.\n");
+static void test_header_decoding(void) {
+    uint8_t header_bytes[64] = {
+        /* e_ident */
+        0x7f, 'E', 'L', 'F',
+        0x02, 0x01, 0x01, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* e_type, e_machine */
+        0x02, 0x00,
+        0x3e, 0x00,
+
+        /* e_version */
+        0x01, 0x00, 0x00, 0x00,
+
+        /* e_entry = 0x401234 */
+        0x34, 0x12, 0x40, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* e_phoff = 64 */
+        0x40, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* e_shoff = 4096 */
+        0x00, 0x10, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* e_flags */
+        0x00, 0x00, 0x00, 0x00,
+
+        /* e_ehsize, e_phentsize, e_phnum */
+        0x40, 0x00,
+        0x38, 0x00,
+        0x03, 0x00,
+
+        /* e_shentsize, e_shnum, e_shstrndx */
+        0x40, 0x00,
+        0x07, 0x00,
+        0x06, 0x00
+    };
+
+    ByteView header_view = {
+        .data = header_bytes,
+        .size = sizeof(header_bytes)
+    };
+
+    Elf64Header header = {0};
+
+    assert(elf_decode_header(&header_view, &header));
+
+    assert(header.type == 2);
+    assert(header.machine == 62);
+    assert(header.version == 1);
+    assert(header.entry == UINT64_C(0x401234));
+    assert(header.program_header_offset == UINT64_C(64));
+    assert(header.section_header_offset == UINT64_C(4096));
+    assert(header.flags == UINT32_C(0));
+    assert(header.header_size == UINT16_C(64));
+    assert(header.program_header_entry_size == UINT16_C(56));
+    assert(header.program_header_count == UINT16_C(3));
+    assert(header.section_header_entry_size == UINT16_C(64));
+    assert(header.section_header_count == UINT16_C(7));
+    assert(header.section_name_table_index == UINT16_C(6));
+
+    ByteView truncated_header = {
+        .data = header_bytes,
+        .size = 63
+    };
+
+    Elf64Header unchanged = {
+        .type = UINT16_C(0xcccc),
+        .entry = UINT64_C(0xcccccccccccccccc),
+        .section_header_count = UINT16_C(0xcccc)
+    };
+
+    assert(!elf_decode_header(&truncated_header, &unchanged));
+    assert(unchanged.type == UINT16_C(0xcccc));
+    assert(unchanged.entry == UINT64_C(0xcccccccccccccccc));
+    assert(unchanged.section_header_count == UINT16_C(0xcccc));
+}
+
+static void test_header_validation(void) {
+    Elf64Header header = {
+        .type = 2,
+        .machine = 62,
+        .version = 1,
+        .header_size = 64
+    };
+
+    assert(elf_validate_header(&header) == ELF_HEADER_OK);
+
+    header.type = 1;
+    assert(elf_validate_header(&header) == ELF_HEADER_OK);
+
+    header.type = 2;
+    assert(elf_validate_header(&header) == ELF_HEADER_OK);
+
+    header.type = 3;
+    assert(elf_validate_header(&header) == ELF_HEADER_OK);
+
+    header.type = 4;
+    assert(
+        elf_validate_header(&header) ==
+        ELF_HEADER_UNSUPPORTED_TYPE
+    );
+    header.type = 2;
+
+    header.machine = 3;
+    assert(
+        elf_validate_header(&header) ==
+        ELF_HEADER_UNSUPPORTED_MACHINE
+    );
+    header.machine = 62;
+
+    header.version = 0;
+    assert(
+        elf_validate_header(&header) ==
+        ELF_HEADER_UNSUPPORTED_VERSION
+    );
+    header.version = 1;
+
+    header.header_size = 63;
+    assert(
+        elf_validate_header(&header) ==
+        ELF_HEADER_INVALID_SIZE
+    );
+    header.header_size = 64;
+
+    assert(elf_validate_header(&header) == ELF_HEADER_OK);
+}
+
+
+int main(void) {
+    test_identification();
+    test_header_decoding();
+    test_header_validation();
+
+    printf("All ELF parser tests passed.\n");
+
     return 0;
 }
