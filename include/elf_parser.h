@@ -36,6 +36,22 @@ typedef enum {
     ELF_HEADER_INVALID_SIZE
 } ElfHeaderStatus;
 
+typedef enum {
+    ELF_LAYOUT_OK = 0,
+
+    ELF_LAYOUT_UNSUPPORTED_EXTENDED_NUMBERING,
+
+    ELF_LAYOUT_INVALID_PROGRAM_HEADER_OFFSET,
+    ELF_LAYOUT_INVALID_PROGRAM_HEADER_ENTRY_SIZE,
+    ELF_LAYOUT_PROGRAM_HEADER_TABLE_OUT_OF_BOUNDS,
+
+    ELF_LAYOUT_INVALID_SECTION_HEADER_OFFSET,
+    ELF_LAYOUT_INVALID_SECTION_HEADER_ENTRY_SIZE,
+    ELF_LAYOUT_SECTION_HEADER_TABLE_OUT_OF_BOUNDS,
+    
+    ELF_LAYOUT_INVALID_SECTION_NAME_TABLE_INDEX
+} ElfLayoutStatus;
+
 ElfIdentStatus elf_validate_identification(const ByteView *view);
 
 bool elf_decode_header(
@@ -44,5 +60,10 @@ bool elf_decode_header(
 );
 
 ElfHeaderStatus elf_validate_header(const Elf64Header *header);
+
+ElfLayoutStatus elf_validate_layout(
+    const ByteView *view,
+    const Elf64Header *header
+);
 
 #endif

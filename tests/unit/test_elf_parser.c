@@ -201,11 +201,171 @@ static void test_header_validation(void) {
     assert(elf_validate_header(&header) == ELF_HEADER_OK);
 }
 
+static void test_program_header_layout(void) {
+    uint8_t file_bytes[232] = {0};
+
+    ByteView view = {
+        .data = file_bytes,
+        .size = sizeof(file_bytes)
+    };
+
+    Elf64Header header = {
+        .program_header_offset = 64,
+        .program_header_entry_size = 56,
+        .program_header_count = 3
+    };
+
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_OK
+    );
+
+    view.size = 231;
+
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_PROGRAM_HEADER_TABLE_OUT_OF_BOUNDS
+    );
+
+    view.size = sizeof(file_bytes);
+
+    header.program_header_count = UINT16_MAX;
+
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_UNSUPPORTED_EXTENDED_NUMBERING
+    );
+
+    header.program_header_count = 3;
+
+    header.program_header_entry_size = 55;
+
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_INVALID_PROGRAM_HEADER_ENTRY_SIZE
+    );
+
+    header.program_header_entry_size = 56;
+
+    header.program_header_offset = UINT64_MAX;
+
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_PROGRAM_HEADER_TABLE_OUT_OF_BOUNDS
+    );
+
+    header.program_header_offset = 64;
+
+    header.program_header_count = 0;
+    header.program_header_offset = UINT64_MAX;
+    header.program_header_entry_size = 0;
+
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_OK
+    );
+
+    header.program_header_count = 3;
+    header.program_header_entry_size = 56;
+    header.program_header_offset = 0;
+
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_INVALID_PROGRAM_HEADER_OFFSET
+    );
+
+    header.program_header_offset = 64;
+}
+
+static void test_section_header_layout(void) {
+    uint8_t file_bytes[256] = {0};
+
+    ByteView view = {
+        .data = file_bytes,
+        .size = sizeof(file_bytes)
+    };
+
+    Elf64Header header = {
+        .section_header_offset = 64,
+        .section_header_entry_size = 64,
+        .section_header_count = 3,
+        .section_name_table_index = 2
+    };
+
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_OK
+    );
+
+    view.size = 255;
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_SECTION_HEADER_TABLE_OUT_OF_BOUNDS
+    );
+    view.size = sizeof(file_bytes);
+
+    header.section_header_offset = 0;
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_INVALID_SECTION_HEADER_OFFSET
+    );
+    header.section_header_offset = 64;
+
+    header.section_header_entry_size = 63;
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_INVALID_SECTION_HEADER_ENTRY_SIZE
+    );
+    header.section_header_entry_size = 64;
+
+    header.section_name_table_index = 3;
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_INVALID_SECTION_NAME_TABLE_INDEX
+    );
+
+    header.section_name_table_index = UINT16_MAX;
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_UNSUPPORTED_EXTENDED_NUMBERING
+    );
+
+    header.section_name_table_index = 0;
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_OK
+    );
+
+    header.section_header_count = 0;
+    header.section_header_offset = 64;
+
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_UNSUPPORTED_EXTENDED_NUMBERING
+    );
+
+    header.section_header_offset = 0;
+    header.section_name_table_index = 1;
+
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_INVALID_SECTION_NAME_TABLE_INDEX
+    );
+
+    header.section_name_table_index = 0;
+
+    assert(
+        elf_validate_layout(&view, &header) ==
+        ELF_LAYOUT_OK
+    );
+}
 
 int main(void) {
     test_identification();
     test_header_decoding();
     test_header_validation();
+    test_program_header_layout();
+    test_section_header_layout();
 
     printf("All ELF parser tests passed.\n");
 

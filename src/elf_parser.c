@@ -35,7 +35,13 @@ enum {
     ELF_TYPE_SHARED_OBJECT = 3,
 
     ELF_MACHINE_X86_64 = 62,
-    ELF_HEADER_VERSION_CURRENT = 1
+    ELF_HEADER_VERSION_CURRENT = 1,
+
+    ELF_PROGRAM_HEADER_SIZE = 56,
+    ELF_PROGRAM_HEADER_EXTENDED_COUNT = 0xffff,
+
+    ELF_SECTION_HEADER_SIZE = 64,
+    ELF_SECTION_NAME_INDEX_EXTENDED = 0xffff    
 };
 
 ElfIdentStatus elf_validate_identification(const ByteView *view) {
@@ -174,4 +180,96 @@ ElfHeaderStatus elf_validate_header(const Elf64Header *header) {
     }
 
     return ELF_HEADER_OK;
+}
+
+static bool table_fits(
+    const ByteView *view,
+    uint64_t offset,
+    uint16_t entry_size,
+    uint16_t entry_count
+) {
+    if (entry_count == 0) {
+        return true;
+    }
+
+    if (entry_size == 0) {
+        return false;
+    }
+
+    if ((uintmax_t)offset > (uintmax_t)view->size) {
+        return false;
+    }
+
+    uintmax_t remaining_bytes = (uintmax_t)view->size - (uintmax_t)offset;
+
+    return (uintmax_t)entry_count <= remaining_bytes / (uintmax_t)entry_size;
+}
+
+ElfLayoutStatus elf_validate_layout(
+    const ByteView *view,
+    const Elf64Header *header
+) {
+    if (header->program_header_count != 0) {
+        if (header->program_header_offset == 0) {
+            return ELF_LAYOUT_INVALID_PROGRAM_HEADER_OFFSET;
+        }
+
+        if (header->program_header_count == ELF_PROGRAM_HEADER_EXTENDED_COUNT) {
+            return ELF_LAYOUT_UNSUPPORTED_EXTENDED_NUMBERING;
+        }
+
+        if (header->program_header_entry_size != ELF_PROGRAM_HEADER_SIZE) {
+            return ELF_LAYOUT_INVALID_PROGRAM_HEADER_ENTRY_SIZE;
+        }
+
+        if (!table_fits(
+                view,
+                header->program_header_offset,
+                header->program_header_entry_size,
+                header->program_header_count
+                )) {
+                return ELF_LAYOUT_PROGRAM_HEADER_TABLE_OUT_OF_BOUNDS;
+            }
+    }
+
+    if (header->section_header_count == 0) {
+            if (header->section_header_offset != 0) {
+                return ELF_LAYOUT_UNSUPPORTED_EXTENDED_NUMBERING;
+            }
+
+            if (header->section_name_table_index != 0) {
+                return ELF_LAYOUT_INVALID_SECTION_NAME_TABLE_INDEX;
+            }
+        } else {
+            if (header->section_name_table_index ==
+                ELF_SECTION_NAME_INDEX_EXTENDED) {
+                return ELF_LAYOUT_UNSUPPORTED_EXTENDED_NUMBERING;
+            }
+
+            if (header->section_header_offset == 0) {
+                return ELF_LAYOUT_INVALID_SECTION_HEADER_OFFSET;
+            }
+
+            if (header->section_header_entry_size !=
+                ELF_SECTION_HEADER_SIZE) {
+                return ELF_LAYOUT_INVALID_SECTION_HEADER_ENTRY_SIZE;
+            }
+
+            if (!table_fits(
+                    view,
+                    header->section_header_offset,
+                    header->section_header_entry_size,
+                    header->section_header_count
+                )) {
+                return ELF_LAYOUT_SECTION_HEADER_TABLE_OUT_OF_BOUNDS;
+            }
+
+            if (header->section_name_table_index != 0 &&
+                header->section_name_table_index >=
+                header->section_header_count) {
+                return ELF_LAYOUT_INVALID_SECTION_NAME_TABLE_INDEX;
+            }
+        }
+
+    return ELF_LAYOUT_OK;
 }
