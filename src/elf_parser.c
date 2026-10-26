@@ -41,8 +41,58 @@ enum {
     ELF_PROGRAM_HEADER_EXTENDED_COUNT = 0xffff,
 
     ELF_SECTION_HEADER_SIZE = 64,
-    ELF_SECTION_NAME_INDEX_EXTENDED = 0xffff    
+    ELF_SECTION_NAME_INDEX_EXTENDED = 0xffff,
+
+    ELF_PH_TYPE = 0,
+    ELF_PH_FLAGS = 4,
+    ELF_PH_OFFSET = 8,
+    ELF_PH_VADDR = 16,
+    ELF_PH_PADDR = 24,
+    ELF_PH_FILESZ = 32,
+    ELF_PH_MEMSZ = 40,
+    ELF_PH_ALIGN = 48,
+
+    ELF_PROGRAM_TYPE_NULL = 0,
+    ELF_PROGRAM_TYPE_LOAD = 1   
 };
+
+static bool table_fits(
+    const ByteView *view,
+    uint64_t offset,
+    uint16_t entry_size,
+    uint16_t entry_count
+) {
+    if (entry_count == 0) {
+        return true;
+    }
+
+    if (entry_size == 0) {
+        return false;
+    }
+
+    if ((uintmax_t)offset > (uintmax_t)view->size) {
+        return false;
+    }
+
+    uintmax_t remaining_bytes = (uintmax_t)view->size - (uintmax_t)offset;
+
+    return (uintmax_t)entry_count <= remaining_bytes / (uintmax_t)entry_size;
+}
+
+static bool file_range_fits(
+    const ByteView *view,
+    uint64_t offset,
+    uint64_t length
+) {
+    if ((uintmax_t)offset > (uintmax_t)view->size) {
+        return false;
+    }
+
+    uintmax_t remaining =
+        (uintmax_t)view->size - (uintmax_t)offset;
+
+    return (uintmax_t)length <= remaining;
+}
 
 ElfIdentStatus elf_validate_identification(const ByteView *view) {
     if (!byte_view_contains(view, 0, ELF_IDENT_SIZE)) {
@@ -182,29 +232,6 @@ ElfHeaderStatus elf_validate_header(const Elf64Header *header) {
     return ELF_HEADER_OK;
 }
 
-static bool table_fits(
-    const ByteView *view,
-    uint64_t offset,
-    uint16_t entry_size,
-    uint16_t entry_count
-) {
-    if (entry_count == 0) {
-        return true;
-    }
-
-    if (entry_size == 0) {
-        return false;
-    }
-
-    if ((uintmax_t)offset > (uintmax_t)view->size) {
-        return false;
-    }
-
-    uintmax_t remaining_bytes = (uintmax_t)view->size - (uintmax_t)offset;
-
-    return (uintmax_t)entry_count <= remaining_bytes / (uintmax_t)entry_size;
-}
-
 ElfLayoutStatus elf_validate_layout(
     const ByteView *view,
     const Elf64Header *header
@@ -272,4 +299,125 @@ ElfLayoutStatus elf_validate_layout(
         }
 
     return ELF_LAYOUT_OK;
+}
+
+bool elf_decode_program_header(
+    const ByteView *view,
+    const Elf64Header *header,
+    uint16_t index,
+    Elf64ProgramHeader *result
+) {
+    if (header->program_header_entry_size !=
+        ELF_PROGRAM_HEADER_SIZE) {
+        return false;
+    }
+
+    if (index >= header->program_header_count) {
+        return false;
+    }
+
+    if (!table_fits(
+        view,
+        header->program_header_offset,
+        header->program_header_entry_size,
+        header->program_header_count
+    )) {
+        return false;
+    }
+
+    uintmax_t entry_offset_value =
+        (uintmax_t)header->program_header_offset +
+        (uintmax_t)index * ELF_PROGRAM_HEADER_SIZE;
+    
+    size_t entry_offset = (size_t)entry_offset_value;
+
+    Elf64ProgramHeader decoded = {0};
+
+    if (!byte_view_read_u32_le(
+            view,
+            entry_offset + ELF_PH_TYPE,
+            &decoded.type
+        ) ||
+        !byte_view_read_u32_le(
+            view,
+            entry_offset + ELF_PH_FLAGS,
+            &decoded.flags
+        )) {
+        return false;
+    }
+    
+    if (!byte_view_read_u64_le(
+            view,
+            entry_offset + ELF_PH_OFFSET,
+            &decoded.file_offset
+        ) ||
+        !byte_view_read_u64_le(
+            view,
+            entry_offset + ELF_PH_VADDR,
+            &decoded.virtual_address
+        ) ||
+        !byte_view_read_u64_le(
+            view,
+            entry_offset + ELF_PH_PADDR,
+            &decoded.physical_address
+        )) {
+        return false;
+    }
+    
+    if (!byte_view_read_u64_le(
+            view,
+            entry_offset + ELF_PH_FILESZ,
+            &decoded.file_size
+        ) ||
+        !byte_view_read_u64_le(
+            view,
+            entry_offset + ELF_PH_MEMSZ,
+            &decoded.memory_size
+        ) ||
+        !byte_view_read_u64_le(
+            view,
+            entry_offset + ELF_PH_ALIGN,
+            &decoded.alignment
+        )) {
+        return false;
+    }
+    
+    *result = decoded;
+    return true;
+}
+
+ElfProgramHeaderStatus elf_validate_program_header(
+    const ByteView *view,
+    const Elf64ProgramHeader *program_header
+) {
+    if (program_header->type == ELF_PROGRAM_TYPE_NULL) {
+        return ELF_PROGRAM_HEADER_OK;
+    }
+    if (!file_range_fits(
+            view,
+            program_header->file_offset,
+            program_header->file_size
+    )) {
+        return ELF_PROGRAM_HEADER_FILE_RANGE_OUT_OF_BOUNDS;
+    }
+
+    if (program_header->type == ELF_PROGRAM_TYPE_LOAD &&
+        program_header->memory_size < program_header->file_size) {
+            return ELF_PROGRAM_HEADER_MEMORY_SIZE_TOO_SMALL;
+    }
+
+    if (program_header->alignment <= 1) {
+        return ELF_PROGRAM_HEADER_OK;
+    }
+
+    if ((program_header->alignment & (program_header->alignment - 1)) != 0) {
+        return ELF_PROGRAM_HEADER_INVALID_ALIGNMENT;
+    }
+
+    if (program_header->file_offset % program_header->alignment !=
+        program_header->virtual_address % program_header->alignment) {
+        return ELF_PROGRAM_HEADER_ALIGNMENT_MISMATCH;
+    }
+
+    return ELF_PROGRAM_HEADER_OK;
 }

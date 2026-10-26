@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 static void test_identification(void) {
     uint8_t identification[16] = {
@@ -360,12 +361,235 @@ static void test_section_header_layout(void) {
     );
 }
 
+static void test_program_header_decoding(void) {
+    uint8_t entries[] = {
+        /* Entry 0: type=1, flags=5 */
+        0x01, 0x00, 0x00, 0x00,
+        0x05, 0x00, 0x00, 0x00,
+
+        /* file_offset=0x1000 */
+        0x00, 0x10, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* virtual_address=0x400000 */
+        0x00, 0x00, 0x40, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* physical_address=0x400000 */
+        0x00, 0x00, 0x40, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* file_size=0x200 */
+        0x00, 0x02, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* memory_size=0x300 */
+        0x00, 0x03, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* alignment=0x1000 */
+        0x00, 0x10, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* Entry 1: type=2, flags=6 */
+        0x02, 0x00, 0x00, 0x00,
+        0x06, 0x00, 0x00, 0x00,
+
+        /* file_offset=0x2000 */
+        0x00, 0x20, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* virtual_address=0x401000 */
+        0x00, 0x10, 0x40, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* physical_address=0x401000 */
+        0x00, 0x10, 0x40, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* file_size=0x80 */
+        0x80, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* memory_size=0x80 */
+        0x80, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* alignment=8 */
+        0x08, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+    };
+
+    uint8_t file_bytes[64 + sizeof(entries)] = {0};
+    memcpy(file_bytes + 64, entries, sizeof(entries));
+
+    ByteView view = {
+        .data = file_bytes,
+        .size = sizeof(file_bytes)
+    };
+
+    Elf64Header header = {
+        .program_header_offset = 64,
+        .program_header_entry_size = 56,
+        .program_header_count = 2
+    };
+
+    Elf64ProgramHeader first = {0};
+    Elf64ProgramHeader second = {0};
+
+    assert(elf_decode_program_header(&view, &header, 0, &first));
+    assert(elf_decode_program_header(&view, &header, 1, &second));
+
+    assert(first.type == UINT32_C(1));
+    assert(first.flags == UINT32_C(5));
+    assert(first.file_offset == UINT64_C(0x1000));
+    assert(first.virtual_address == UINT64_C(0x400000));
+    assert(first.physical_address == UINT64_C(0x400000));
+    assert(first.file_size == UINT64_C(0x200));
+    assert(first.memory_size == UINT64_C(0x300));
+    assert(first.alignment == UINT64_C(0x1000));
+
+    assert(second.type == UINT32_C(2));
+    assert(second.flags == UINT32_C(6));
+    assert(second.file_offset == UINT64_C(0x2000));
+    assert(second.virtual_address == UINT64_C(0x401000));
+    assert(second.physical_address == UINT64_C(0x401000));
+    assert(second.file_size == UINT64_C(0x80));
+    assert(second.memory_size == UINT64_C(0x80));
+    assert(second.alignment == UINT64_C(8));
+
+    Elf64ProgramHeader unchanged = {
+        .type = UINT32_C(0xcccccccc),
+        .file_offset = UINT64_C(0xcccccccccccccccc)
+    };
+
+    assert(!elf_decode_program_header(
+        &view,
+        &header,
+        2,
+        &unchanged
+    ));
+
+    assert(unchanged.type == UINT32_C(0xcccccccc));
+    assert(
+        unchanged.file_offset ==
+        UINT64_C(0xcccccccccccccccc)
+    );
+
+    view.size = sizeof(file_bytes) - 1;
+
+    assert(!elf_decode_program_header(
+        &view,
+        &header,
+        1,
+        &unchanged
+    ));
+
+    assert(unchanged.type == UINT32_C(0xcccccccc));
+    assert(
+        unchanged.file_offset ==
+        UINT64_C(0xcccccccccccccccc)
+    );
+}
+
+static void test_program_header_validation(void) {
+    uint8_t bytes[4096] = {0};
+
+    ByteView view = {
+        .data = bytes,
+        .size = sizeof(bytes)
+    };
+
+    Elf64ProgramHeader segment = {
+        .type = 1,
+        .file_offset = 0x100,
+        .virtual_address = 0x400100,
+        .file_size = 0x200,
+        .memory_size = 0x300,
+        .alignment = 0x1000
+    };
+
+    assert(
+        elf_validate_program_header(&view, &segment) ==
+        ELF_PROGRAM_HEADER_OK
+    );
+
+    segment.file_offset = 0xf00;
+    segment.virtual_address = 0x400f00;
+    segment.file_size = 0x100;
+    segment.memory_size = 0x100;
+
+    assert(
+        elf_validate_program_header(&view, &segment) ==
+        ELF_PROGRAM_HEADER_OK
+    );
+
+    segment.file_size = 0x101;
+    segment.memory_size = 0x101;
+
+    assert(
+        elf_validate_program_header(&view, &segment) ==
+        ELF_PROGRAM_HEADER_FILE_RANGE_OUT_OF_BOUNDS
+    );
+
+    segment.file_offset = 0x100;
+    segment.virtual_address = 0x400100;
+    segment.file_size = 0x200;
+    segment.memory_size = 0x1ff;
+
+    assert(
+        elf_validate_program_header(&view, &segment) ==
+        ELF_PROGRAM_HEADER_MEMORY_SIZE_TOO_SMALL
+    );
+
+    segment.memory_size = 0x300;
+    segment.alignment = 3;
+
+    assert(
+        elf_validate_program_header(&view, &segment) ==
+        ELF_PROGRAM_HEADER_INVALID_ALIGNMENT
+    );
+
+    segment.alignment = 0x1000;
+    segment.virtual_address = 0x400200;
+
+    assert(
+        elf_validate_program_header(&view, &segment) ==
+        ELF_PROGRAM_HEADER_ALIGNMENT_MISMATCH
+    );
+
+    segment.alignment = 0;
+    assert(
+        elf_validate_program_header(&view, &segment) ==
+        ELF_PROGRAM_HEADER_OK
+    );
+
+    segment.alignment = 1;
+    assert(
+        elf_validate_program_header(&view, &segment) ==
+        ELF_PROGRAM_HEADER_OK
+    );
+
+    segment.type = 0;
+    segment.file_offset = UINT64_MAX;
+    segment.file_size = UINT64_MAX;
+    segment.memory_size = 0;
+    segment.alignment = 3;
+
+    assert(
+        elf_validate_program_header(&view, &segment) ==
+        ELF_PROGRAM_HEADER_OK
+    );
+}
+
 int main(void) {
     test_identification();
     test_header_decoding();
     test_header_validation();
     test_program_header_layout();
     test_section_header_layout();
+    test_program_header_decoding();
+    test_program_header_validation();
 
     printf("All ELF parser tests passed.\n");
 

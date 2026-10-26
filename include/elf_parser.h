@@ -28,6 +28,17 @@ typedef struct {
     uint16_t section_name_table_index;
 } Elf64Header;
 
+typedef struct {
+    uint32_t type;
+    uint32_t flags;
+    uint64_t file_offset;
+    uint64_t virtual_address;
+    uint64_t physical_address;
+    uint64_t file_size;
+    uint64_t memory_size;
+    uint64_t alignment;
+} Elf64ProgramHeader;
+
 typedef enum {
     ELF_HEADER_OK = 0,
     ELF_HEADER_UNSUPPORTED_TYPE,
@@ -48,9 +59,17 @@ typedef enum {
     ELF_LAYOUT_INVALID_SECTION_HEADER_OFFSET,
     ELF_LAYOUT_INVALID_SECTION_HEADER_ENTRY_SIZE,
     ELF_LAYOUT_SECTION_HEADER_TABLE_OUT_OF_BOUNDS,
-    
+
     ELF_LAYOUT_INVALID_SECTION_NAME_TABLE_INDEX
 } ElfLayoutStatus;
+
+typedef enum {
+    ELF_PROGRAM_HEADER_OK = 0,
+    ELF_PROGRAM_HEADER_FILE_RANGE_OUT_OF_BOUNDS,
+    ELF_PROGRAM_HEADER_MEMORY_SIZE_TOO_SMALL,
+    ELF_PROGRAM_HEADER_INVALID_ALIGNMENT,
+    ELF_PROGRAM_HEADER_ALIGNMENT_MISMATCH
+} ElfProgramHeaderStatus;
 
 ElfIdentStatus elf_validate_identification(const ByteView *view);
 
@@ -64,6 +83,18 @@ ElfHeaderStatus elf_validate_header(const Elf64Header *header);
 ElfLayoutStatus elf_validate_layout(
     const ByteView *view,
     const Elf64Header *header
+);
+
+bool elf_decode_program_header(
+    const ByteView *view,
+    const Elf64Header *header,
+    uint16_t index,
+    Elf64ProgramHeader *result
+);
+
+ElfProgramHeaderStatus elf_validate_program_header(
+    const ByteView *view,
+    const Elf64ProgramHeader *program_header
 );
 
 #endif
