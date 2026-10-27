@@ -65,6 +65,25 @@ static const char *layout_status_message(ElfLayoutStatus status) {
     }
 }
 
+static const char *program_header_status_message(
+    ElfProgramHeaderStatus status
+) {
+    switch (status) {
+        case ELF_PROGRAM_HEADER_OK:
+            return "valid program header";
+        case ELF_PROGRAM_HEADER_FILE_RANGE_OUT_OF_BOUNDS:
+            return "segment file range extends beyond file";
+        case ELF_PROGRAM_HEADER_MEMORY_SIZE_TOO_SMALL:
+            return "loadable segment memory size is smaller than file size";
+        case ELF_PROGRAM_HEADER_INVALID_ALIGNMENT:
+            return "invalid segment alignment";
+        case ELF_PROGRAM_HEADER_ALIGNMENT_MISMATCH:
+            return "segment file offset and virtual address are misaligned";
+        default:
+            return "unknown program-header error";
+    }
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <file>\n", argv[0]);
@@ -136,6 +155,48 @@ int main(int argc, char *argv[]) {
 
         file_buffer_destroy(&buffer);
         return EXIT_FAILURE;
+    }
+
+    for (uint16_t index = 0;
+        index < header.program_header_count;
+        index++) {
+        Elf64ProgramHeader program_header = {0};
+
+        if (!elf_decode_program_header(
+            &view,
+            &header,
+            index,
+            &program_header
+        )) {
+            fprintf(
+                stderr,
+                "%s: program header %u: failed to decode\n",
+                argv[1],
+                (unsigned int)index
+            );
+
+            file_buffer_destroy(&buffer);
+            return EXIT_FAILURE;
+        }
+
+        ElfProgramHeaderStatus program_status =
+            elf_validate_program_header(
+                &view,
+                &program_header
+            );
+        
+        if (program_status != ELF_PROGRAM_HEADER_OK) {
+            fprintf(
+                stderr,
+                "%s: program header %u: %s\n",
+                argv[1],
+                (unsigned int)index,
+                program_header_status_message(program_status)
+            );
+
+            file_buffer_destroy(&buffer);
+            return EXIT_FAILURE;
+        }
     }
 
     printf("%s: valid supported ELF64 file\n", argv[1]);
