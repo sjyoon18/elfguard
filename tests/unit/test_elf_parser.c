@@ -582,6 +582,41 @@ static void test_program_header_validation(void) {
     );
 }
 
+static void test_program_header_is_writable_executable(void) {
+    Elf64ProgramHeader headers[8] = {0};
+    for (int i = 0; i < 8; i++) {
+        headers[i].type = 1;
+        headers[i].flags = (uint32_t)i;
+    }
+
+    assert(!elf_program_header_is_writable_executable(&headers[0]));
+    assert(!elf_program_header_is_writable_executable(&headers[1]));
+    assert(!elf_program_header_is_writable_executable(&headers[2]));
+    assert(elf_program_header_is_writable_executable(&headers[3]));
+    assert(!elf_program_header_is_writable_executable(&headers[4]));
+    assert(!elf_program_header_is_writable_executable(&headers[5]));
+    assert(!elf_program_header_is_writable_executable(&headers[6]));
+    assert(elf_program_header_is_writable_executable(&headers[7]));
+
+    Elf64ProgramHeader extra_bits = {
+        .type = 1,
+        .flags = UINT32_C(0x80000003)
+    };
+
+    assert(elf_program_header_is_writable_executable(&extra_bits));
+
+    extra_bits.flags = UINT32_C(0x80000001);
+
+    assert(!elf_program_header_is_writable_executable(&extra_bits));
+
+    Elf64ProgramHeader unused = {
+        .type = 0,
+        .flags = 3
+    };
+
+    assert(!elf_program_header_is_writable_executable(&unused));
+}
+
 int main(void) {
     test_identification();
     test_header_decoding();
@@ -590,6 +625,7 @@ int main(void) {
     test_section_header_layout();
     test_program_header_decoding();
     test_program_header_validation();
+    test_program_header_is_writable_executable();
 
     printf("All ELF parser tests passed.\n");
 

@@ -158,8 +158,8 @@ int main(int argc, char *argv[]) {
     }
 
     for (uint16_t index = 0;
-        index < header.program_header_count;
-        index++) {
+         index < header.program_header_count;
+         index++) {
         Elf64ProgramHeader program_header = {0};
 
         if (!elf_decode_program_header(
@@ -196,6 +196,18 @@ int main(int argc, char *argv[]) {
 
             file_buffer_destroy(&buffer);
             return EXIT_FAILURE;
+        }
+
+        if (elf_program_header_is_writable_executable(
+                &program_header
+            )) {
+            fprintf(
+                stderr,
+                "%s: warning: program header %u has "
+                "writable and executable permissions\n",
+                argv[1],
+                (unsigned int)index
+            );
         }
     }
 

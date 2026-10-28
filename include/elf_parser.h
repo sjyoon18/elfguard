@@ -97,4 +97,8 @@ ElfProgramHeaderStatus elf_validate_program_header(
     const Elf64ProgramHeader *program_header
 );
 
+bool elf_program_header_is_writable_executable(
+    const Elf64ProgramHeader *program_header
+);
+
 #endif

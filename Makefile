@@ -2,7 +2,7 @@ CC = clang
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -g -Iinclude
 SANITIZER_FLAGS = -fsanitize=address,undefined -fno-omit-frame-pointer
 
-.PHONY: test test-sanitize clean
+.PHONY: test test-sanitize test-integration clean
 
 elfguard: src/main.c src/file_buffer.c src/byte_reader.c src/elf_parser.c include/file_buffer.h include/byte_reader.h include/elf_parser.h
 	$(CC) $(CFLAGS) \
@@ -38,6 +38,9 @@ test: test_byte_reader test_elf_parser
 test-sanitize: test_byte_reader_sanitize test_elf_parser_sanitize
 	./test_byte_reader_sanitize
 	./test_elf_parser_sanitize
+
+test-integration: elfguard
+	python3 tests/integration/test_cli.py
 
 clean:
 	rm -f elfguard test_byte_reader test_byte_reader_sanitize test_elf_parser test_elf_parser_sanitize

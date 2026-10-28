@@ -53,7 +53,11 @@ enum {
     ELF_PH_ALIGN = 48,
 
     ELF_PROGRAM_TYPE_NULL = 0,
-    ELF_PROGRAM_TYPE_LOAD = 1   
+    ELF_PROGRAM_TYPE_LOAD = 1,
+
+    ELF_PROGRAM_FLAG_EXECUTE = 1,
+    ELF_PROGRAM_FLAG_WRITE = 2,
+    ELF_PROGRAM_FLAG_READ = 4
 };
 
 static bool table_fits(
@@ -420,4 +424,19 @@ ElfProgramHeaderStatus elf_validate_program_header(
     }
 
     return ELF_PROGRAM_HEADER_OK;
+}
+
+bool elf_program_header_is_writable_executable(
+    const Elf64ProgramHeader *program_header
+) {
+    if (program_header->type == ELF_PROGRAM_TYPE_NULL) {
+        return false;
+    }
+    
+    bool writable =
+        (program_header->flags & ELF_PROGRAM_FLAG_WRITE) != 0;
+    bool executable = 
+        (program_header->flags & ELF_PROGRAM_FLAG_EXECUTE) != 0;
+    
+    return writable && executable;
 }
