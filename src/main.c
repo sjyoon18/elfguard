@@ -65,6 +65,25 @@ static const char *layout_status_message(ElfLayoutStatus status) {
     }
 }
 
+static const char *section_header_status_message(
+    ElfSectionHeaderStatus status
+) {
+    switch (status) {
+        case ELF_SECTION_HEADER_OK:
+            return "valid section header";
+        case ELF_SECTION_HEADER_FILE_RANGE_OUT_OF_BOUNDS:
+            return "section file range extends beyond file";
+        case ELF_SECTION_HEADER_INVALID_ALIGNMENT:
+            return "invalid section alignment";
+        case ELF_SECTION_HEADER_ADDRESS_ALIGNMENT_MISMATCH:
+            return "section address is misaligned";
+        case ELF_SECTION_HEADER_SIZE_NOT_MULTIPLE_OF_ENTRY_SIZE:
+            return "section size is not a multiple of entry size";
+        default:
+            return "unknown section-header error";
+    }
+}
+
 static const char *program_header_status_message(
     ElfProgramHeaderStatus status
 ) {
@@ -208,6 +227,48 @@ int main(int argc, char *argv[]) {
                 argv[1],
                 (unsigned int)index
             );
+        }
+    }
+
+    for (uint16_t index = 0;
+        index < header.section_header_count;
+        index++) {
+        Elf64SectionHeader section_header = {0};
+
+        if (!elf_decode_section_header(
+                &view,
+                &header,
+                index,
+                &section_header
+            )) {
+            fprintf(
+                stderr,
+                "%s: section header %u: failed to decode\n",
+                argv[1],
+                (unsigned int)index
+            );
+
+            file_buffer_destroy(&buffer);
+            return EXIT_FAILURE;
+        }
+
+        ElfSectionHeaderStatus section_status =
+            elf_validate_section_header(
+                &view,
+                &section_header
+            );
+
+        if (section_status != ELF_SECTION_HEADER_OK) {
+            fprintf(
+                stderr,
+                "%s: section header %u: %s\n",
+                argv[1],
+                (unsigned int)index,
+                section_header_status_message(section_status)
+            );
+
+            file_buffer_destroy(&buffer);
+            return EXIT_FAILURE;
         }
     }
 

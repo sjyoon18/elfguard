@@ -617,6 +617,228 @@ static void test_program_header_is_writable_executable(void) {
     assert(!elf_program_header_is_writable_executable(&unused));
 }
 
+static void test_section_header_decoding(void) {
+    const uint8_t second_entry[64] = {
+        /* name_offset, type */
+        0x01, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x00, 0x00,
+
+        /* flags = 6 */
+        0x06, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* address = 0x401000 */
+        0x00, 0x10, 0x40, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* file_offset = 0x200 */
+        0x00, 0x02, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* size = 0x80 */
+        0x80, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* link, info */
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* alignment = 16 */
+        0x10, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+
+        /* entry_size = 0 */
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+    };
+
+    uint8_t file_bytes[64 + 128] = {0};
+
+    memcpy(
+        file_bytes + 64 + 64,
+        second_entry,
+        sizeof(second_entry)
+    );
+
+    ByteView view = {
+        .data = file_bytes,
+        .size = sizeof(file_bytes)
+    };
+
+    Elf64Header header = {
+        .section_header_offset = 64,
+        .section_header_entry_size = 64,
+        .section_header_count = 2
+    };
+
+    Elf64SectionHeader first = {0};
+    Elf64SectionHeader second = {0};
+
+    assert(elf_decode_section_header(&view, &header, 0, &first));
+    assert(elf_decode_section_header(&view, &header, 1, &second));
+
+    assert(first.name_offset == UINT32_C(0));
+    assert(first.type == UINT32_C(0));
+    assert(first.flags == UINT64_C(0));
+    assert(first.address == UINT64_C(0));
+    assert(first.file_offset == UINT64_C(0));
+    assert(first.size == UINT64_C(0));
+    assert(first.link == UINT32_C(0));
+    assert(first.info == UINT32_C(0));
+    assert(first.alignment == UINT64_C(0));
+    assert(first.entry_size == UINT64_C(0));
+
+    assert(second.name_offset == UINT32_C(1));
+    assert(second.type == UINT32_C(1));
+    assert(second.flags == UINT64_C(6));
+    assert(second.address == UINT64_C(0x401000));
+    assert(second.file_offset == UINT64_C(0x200));
+    assert(second.size == UINT64_C(0x80));
+    assert(second.link == UINT32_C(0));
+    assert(second.info == UINT32_C(0));
+    assert(second.alignment == UINT64_C(16));
+    assert(second.entry_size == UINT64_C(0));
+
+    Elf64SectionHeader unchanged = {
+        .type = UINT32_C(0xcccccccc),
+        .file_offset = UINT64_C(0xcccccccccccccccc)
+    };
+
+    assert(!elf_decode_section_header(&view, &header, 2, &unchanged));
+
+    assert(unchanged.type == UINT32_C(0xcccccccc));
+    assert(
+        unchanged.file_offset ==
+        UINT64_C(0xcccccccccccccccc)
+    );
+
+    view.size = sizeof(file_bytes) - 1;
+
+    assert(!elf_decode_section_header(
+        &view,
+        &header,
+        1,
+        &unchanged
+    ));
+
+    assert(unchanged.type == UINT32_C(0xcccccccc));
+    assert(
+        unchanged.file_offset ==
+        UINT64_C(0xcccccccccccccccc)
+    );
+}
+
+static void test_section_header_validation(void) {
+    uint8_t bytes[4096] = {0};
+
+    ByteView view = {
+        .data = bytes,
+        .size = sizeof(bytes)
+    };
+
+    Elf64SectionHeader section = {
+        .type = 1,
+        .file_offset = 0x100,
+        .size = 0x200,
+        .address = 0x401000,
+        .alignment = 0x1000,
+        .entry_size = 0x20
+    };
+
+    assert(
+        elf_validate_section_header(&view, &section) ==
+        ELF_SECTION_HEADER_OK
+    );
+
+    section.file_offset = 0xf00;
+    section.size = 0x100;
+    section.address = 0x402000;
+
+    assert(
+        elf_validate_section_header(&view, &section) ==
+        ELF_SECTION_HEADER_OK
+    );
+
+    section.size = 0x101;
+
+    assert(
+        elf_validate_section_header(&view, &section) ==
+        ELF_SECTION_HEADER_FILE_RANGE_OUT_OF_BOUNDS
+    );
+
+    section.type = 8;
+    section.file_offset = UINT64_MAX;
+    section.size = UINT64_MAX;
+    section.address = 0;
+    section.alignment = 1;
+    section.entry_size = 0;
+
+    assert(
+        elf_validate_section_header(&view, &section) ==
+        ELF_SECTION_HEADER_OK
+    );
+
+    section.type = 1;
+    section.file_offset = 0x100;
+    section.size = 0x200;
+    section.address = 0x401000;
+    section.alignment = 6;
+    section.entry_size = 0x20;
+
+    assert(
+        elf_validate_section_header(&view, &section) ==
+        ELF_SECTION_HEADER_INVALID_ALIGNMENT
+    );
+
+    section.alignment = 0x1000;
+    section.address = 0x401001;
+
+    assert(
+        elf_validate_section_header(&view, &section) ==
+        ELF_SECTION_HEADER_ADDRESS_ALIGNMENT_MISMATCH
+    );
+
+    section.alignment = 0;
+
+    assert(
+        elf_validate_section_header(&view, &section) ==
+        ELF_SECTION_HEADER_OK
+    );
+
+    section.alignment = 1;
+
+    assert(
+        elf_validate_section_header(&view, &section) ==
+        ELF_SECTION_HEADER_OK
+    );
+
+    section.size = 0x201;
+    section.entry_size = 0x20;
+
+    assert(
+        elf_validate_section_header(&view, &section) ==
+        ELF_SECTION_HEADER_SIZE_NOT_MULTIPLE_OF_ENTRY_SIZE
+    );
+
+    section.entry_size = 0;
+
+    assert(
+        elf_validate_section_header(&view, &section) ==
+        ELF_SECTION_HEADER_OK
+    );
+
+    section.type = 0;
+    section.file_offset = UINT64_MAX;
+    section.size = UINT64_MAX;
+    section.alignment = 6;
+    section.entry_size = 7;
+
+    assert(
+        elf_validate_section_header(&view, &section) ==
+        ELF_SECTION_HEADER_OK
+    );
+}
+
 int main(void) {
     test_identification();
     test_header_decoding();
@@ -626,6 +848,8 @@ int main(void) {
     test_program_header_decoding();
     test_program_header_validation();
     test_program_header_is_writable_executable();
+    test_section_header_decoding();
+    test_section_header_validation();
 
     printf("All ELF parser tests passed.\n");
 

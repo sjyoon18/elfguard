@@ -57,7 +57,21 @@ enum {
 
     ELF_PROGRAM_FLAG_EXECUTE = 1,
     ELF_PROGRAM_FLAG_WRITE = 2,
-    ELF_PROGRAM_FLAG_READ = 4
+    ELF_PROGRAM_FLAG_READ = 4,
+
+    ELF_SH_NAME = 0,
+    ELF_SH_TYPE = 4,
+    ELF_SH_FLAGS = 8,
+    ELF_SH_ADDR = 16,
+    ELF_SH_OFFSET = 24,
+    ELF_SH_SIZE = 32,
+    ELF_SH_LINK = 40,
+    ELF_SH_INFO = 44,
+    ELF_SH_ADDRALIGN = 48,
+    ELF_SH_ENTSIZE = 56,
+
+    ELF_SECTION_TYPE_NULL = 0,
+    ELF_SECTION_TYPE_NOBITS = 8
 };
 
 static bool table_fits(
@@ -432,11 +446,143 @@ bool elf_program_header_is_writable_executable(
     if (program_header->type == ELF_PROGRAM_TYPE_NULL) {
         return false;
     }
-    
+
     bool writable =
         (program_header->flags & ELF_PROGRAM_FLAG_WRITE) != 0;
     bool executable = 
         (program_header->flags & ELF_PROGRAM_FLAG_EXECUTE) != 0;
     
     return writable && executable;
+}
+
+bool elf_decode_section_header(
+    const ByteView *view,
+    const Elf64Header *header,
+    uint16_t index,
+    Elf64SectionHeader *result
+) {
+    if (header->section_header_entry_size !=
+        ELF_SECTION_HEADER_SIZE) {
+            return false;
+    }
+
+    if (index >= header->section_header_count) {
+        return false;
+    }
+
+    if (!table_fits(
+        view,
+        header->section_header_offset,
+        header->section_header_entry_size,
+        header->section_header_count
+    )) {
+        return false;
+    }
+
+    uintmax_t entry_offset_value =
+        (uintmax_t)header->section_header_offset +
+        (uintmax_t)index * ELF_SECTION_HEADER_SIZE;
+    
+    size_t entry_offset = (size_t)entry_offset_value;
+
+    Elf64SectionHeader decoded = {0};
+
+    if (!byte_view_read_u32_le(
+            view,
+            entry_offset + ELF_SH_NAME,
+            &decoded.name_offset
+        ) ||
+        !byte_view_read_u32_le(
+            view,
+            entry_offset + ELF_SH_TYPE,
+            &decoded.type
+        ) ||
+        !byte_view_read_u64_le(
+            view,
+            entry_offset + ELF_SH_FLAGS,
+            &decoded.flags
+        )) {
+        return false;
+    }
+
+    if (!byte_view_read_u64_le(
+            view,
+            entry_offset + ELF_SH_ADDR,
+            &decoded.address
+        ) ||
+        !byte_view_read_u64_le(
+            view,
+            entry_offset + ELF_SH_OFFSET,
+            &decoded.file_offset
+        ) ||
+        !byte_view_read_u64_le(
+            view,
+            entry_offset + ELF_SH_SIZE,
+            &decoded.size
+        )) {
+        return false;
+    }
+
+    if (!byte_view_read_u32_le(
+            view,
+            entry_offset + ELF_SH_LINK,
+            &decoded.link
+        ) ||
+        !byte_view_read_u32_le(
+            view,
+            entry_offset + ELF_SH_INFO,
+            &decoded.info
+        ) ||
+        !byte_view_read_u64_le(
+            view,
+            entry_offset + ELF_SH_ADDRALIGN,
+            &decoded.alignment
+        ) ||
+        !byte_view_read_u64_le(
+            view,
+            entry_offset + ELF_SH_ENTSIZE,
+            &decoded.entry_size
+        )) {
+        return false;
+    }
+
+    *result = decoded;
+    return true;
+}
+
+ElfSectionHeaderStatus elf_validate_section_header(
+    const ByteView *view,
+    const Elf64SectionHeader *section_header
+) {
+    if (section_header->type == ELF_SECTION_TYPE_NULL) {
+        return ELF_SECTION_HEADER_OK;
+    }
+    
+    if (section_header->type != ELF_SECTION_TYPE_NOBITS &&
+        !file_range_fits(
+            view,
+            section_header->file_offset,
+            section_header->size
+        )) {
+        return ELF_SECTION_HEADER_FILE_RANGE_OUT_OF_BOUNDS;
+    }
+
+    if (section_header->alignment > 1) {
+        if ((section_header->alignment &
+            (section_header->alignment - 1)) != 0) {
+            return ELF_SECTION_HEADER_INVALID_ALIGNMENT;
+        }
+
+        if (section_header->address %
+            section_header->alignment != 0) {
+            return ELF_SECTION_HEADER_ADDRESS_ALIGNMENT_MISMATCH;
+        }
+    }
+
+    if (section_header->entry_size != 0 &&
+        section_header->size % section_header->entry_size != 0) {
+        return ELF_SECTION_HEADER_SIZE_NOT_MULTIPLE_OF_ENTRY_SIZE;
+    }
+
+    return ELF_SECTION_HEADER_OK;
 }

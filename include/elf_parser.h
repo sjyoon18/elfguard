@@ -39,6 +39,19 @@ typedef struct {
     uint64_t alignment;
 } Elf64ProgramHeader;
 
+typedef struct {
+    uint32_t name_offset;
+    uint32_t type;
+    uint64_t flags;
+    uint64_t address;
+    uint64_t file_offset;
+    uint64_t size;
+    uint32_t link;
+    uint32_t info;
+    uint64_t alignment;
+    uint64_t entry_size;
+} Elf64SectionHeader;
+
 typedef enum {
     ELF_HEADER_OK = 0,
     ELF_HEADER_UNSUPPORTED_TYPE,
@@ -71,6 +84,14 @@ typedef enum {
     ELF_PROGRAM_HEADER_ALIGNMENT_MISMATCH
 } ElfProgramHeaderStatus;
 
+typedef enum {
+    ELF_SECTION_HEADER_OK = 0,
+    ELF_SECTION_HEADER_FILE_RANGE_OUT_OF_BOUNDS,
+    ELF_SECTION_HEADER_INVALID_ALIGNMENT,
+    ELF_SECTION_HEADER_ADDRESS_ALIGNMENT_MISMATCH,
+    ELF_SECTION_HEADER_SIZE_NOT_MULTIPLE_OF_ENTRY_SIZE
+} ElfSectionHeaderStatus;
+
 ElfIdentStatus elf_validate_identification(const ByteView *view);
 
 bool elf_decode_header(
@@ -99,6 +120,18 @@ ElfProgramHeaderStatus elf_validate_program_header(
 
 bool elf_program_header_is_writable_executable(
     const Elf64ProgramHeader *program_header
+);
+
+bool elf_decode_section_header(
+    const ByteView *view,
+    const Elf64Header *header,
+    uint16_t index,
+    Elf64SectionHeader *result
+);
+
+ElfSectionHeaderStatus elf_validate_section_header(
+    const ByteView *view,
+    const Elf64SectionHeader *section_header
 );
 
 #endif
