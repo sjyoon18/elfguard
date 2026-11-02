@@ -839,6 +839,123 @@ static void test_section_header_validation(void) {
     );
 }
 
+static void test_section_name_resolution(void) {
+    const uint8_t file_bytes[] = {
+        0xaa, 0xbb, 0xcc, 0xdd,  /* unrelated prefix */
+
+        '\0',
+        '.', 't', 'e', 'x', 't', '\0',
+        '.', 'd', 'a', 't', 'a', '\0',
+        'b', 'a', 'd'
+    };
+
+    ByteView view = {
+        .data = file_bytes,
+        .size = sizeof(file_bytes)
+    };
+
+    Elf64SectionHeader name_table = {
+        .type = UINT32_C(3),
+        .file_offset = UINT64_C(4),
+        .size = UINT64_C(16)
+    };
+
+    Elf64SectionHeader section = {0};
+    ByteView name = {0};
+
+    section.name_offset = 0;
+    assert(
+        elf_resolve_section_name(
+            &view, &name_table, &section, &name
+        ) == ELF_SECTION_NAME_OK
+    );
+    assert(name.data == file_bytes + 4);
+    assert(name.size == 0);
+
+    section.name_offset = 1;
+    assert(
+        elf_resolve_section_name(
+            &view, &name_table, &section, &name
+        ) == ELF_SECTION_NAME_OK
+    );
+    assert(name.data == file_bytes + 5);
+    assert(name.size == 5);
+    assert(memcmp(name.data, ".text", 5) == 0);
+
+    section.name_offset = 7;
+    assert(
+        elf_resolve_section_name(
+            &view, &name_table, &section, &name
+        ) == ELF_SECTION_NAME_OK
+    );
+    assert(name.data == file_bytes + 11);
+    assert(name.size == 5);
+    assert(memcmp(name.data, ".data", 5) == 0);
+
+    const uint8_t sentinel = 0xcc;
+
+    name.data = &sentinel;
+    name.size = SIZE_MAX;
+
+    Elf64SectionHeader wrong_type = name_table;
+    wrong_type.type = UINT32_C(1);
+
+    assert(
+        elf_resolve_section_name(
+            &view,
+            &wrong_type,
+            &section,
+            &name
+        ) == ELF_SECTION_NAME_TABLE_WRONG_TYPE
+    );
+
+    assert(name.data == &sentinel);
+    assert(name.size == SIZE_MAX);
+
+    Elf64SectionHeader out_of_bounds = name_table;
+    out_of_bounds.size = UINT64_C(17);
+
+    assert(
+        elf_resolve_section_name(
+            &view,
+            &out_of_bounds,
+            &section,
+            &name
+        ) == ELF_SECTION_NAME_TABLE_OUT_OF_BOUNDS
+    );
+
+    assert(name.data == &sentinel);
+    assert(name.size == SIZE_MAX);
+
+    section.name_offset = UINT32_C(16);
+
+    assert(
+        elf_resolve_section_name(
+            &view,
+            &name_table,
+            &section,
+            &name
+        ) == ELF_SECTION_NAME_OFFSET_OUT_OF_BOUNDS
+    );
+
+    assert(name.data == &sentinel);
+    assert(name.size == SIZE_MAX);
+
+    section.name_offset = UINT32_C(13);
+
+    assert(
+        elf_resolve_section_name(
+            &view,
+            &name_table,
+            &section,
+            &name
+        ) == ELF_SECTION_NAME_UNTERMINATED
+    );
+
+    assert(name.data == &sentinel);
+    assert(name.size == SIZE_MAX);
+}
+
 int main(void) {
     test_identification();
     test_header_decoding();
@@ -850,6 +967,7 @@ int main(void) {
     test_program_header_is_writable_executable();
     test_section_header_decoding();
     test_section_header_validation();
+    test_section_name_resolution();
 
     printf("All ELF parser tests passed.\n");
 

@@ -71,7 +71,9 @@ enum {
     ELF_SH_ENTSIZE = 56,
 
     ELF_SECTION_TYPE_NULL = 0,
-    ELF_SECTION_TYPE_NOBITS = 8
+    ELF_SECTION_TYPE_NOBITS = 8,
+
+    ELF_SECTION_TYPE_STRING_TABLE = 3
 };
 
 static bool table_fits(
@@ -585,4 +587,46 @@ ElfSectionHeaderStatus elf_validate_section_header(
     }
 
     return ELF_SECTION_HEADER_OK;
+}
+
+ElfSectionNameStatus elf_resolve_section_name(
+    const ByteView *view,
+    const Elf64SectionHeader *name_table,
+    const Elf64SectionHeader *section_header,
+    ByteView *result
+) {
+    if (name_table->type != ELF_SECTION_TYPE_STRING_TABLE) {
+        return ELF_SECTION_NAME_TABLE_WRONG_TYPE;
+    }
+
+    if (!file_range_fits(
+            view,
+            name_table->file_offset,
+            name_table->size
+        )) {
+        return ELF_SECTION_NAME_TABLE_OUT_OF_BOUNDS;
+    }
+
+    if ((uintmax_t)section_header->name_offset >=
+        (uintmax_t)name_table->size) {
+            return ELF_SECTION_NAME_OFFSET_OUT_OF_BOUNDS;
+    }
+
+    const ByteView name_table_view = {
+        .data = view->data + (size_t)name_table->file_offset,
+        .size = (size_t)name_table->size
+    };
+
+    ByteView decoded = {0};
+
+    if (!byte_view_read_c_string(
+        &name_table_view,
+        (size_t)section_header->name_offset,
+        &decoded
+    )) {
+        return ELF_SECTION_NAME_UNTERMINATED;
+    }
+
+    *result = decoded;
+    return ELF_SECTION_NAME_OK;
 }

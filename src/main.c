@@ -103,6 +103,25 @@ static const char *program_header_status_message(
     }
 }
 
+static const char *section_name_status_message(
+    ElfSectionNameStatus status
+) {
+    switch (status) {
+        case ELF_SECTION_NAME_OK:
+            return "valid section name";
+        case ELF_SECTION_NAME_TABLE_WRONG_TYPE:
+            return "section-name table is not a string table";
+        case ELF_SECTION_NAME_TABLE_OUT_OF_BOUNDS:
+            return "section-name table extends beyond file";
+        case ELF_SECTION_NAME_OFFSET_OUT_OF_BOUNDS:
+            return "section-name offset is outside string table";
+        case ELF_SECTION_NAME_UNTERMINATED:
+            return "section name is not null-terminated";
+        default:
+            return "unknown section-name error";
+    }
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <file>\n", argv[0]);
@@ -174,6 +193,47 @@ int main(int argc, char *argv[]) {
 
         file_buffer_destroy(&buffer);
         return EXIT_FAILURE;
+    }
+
+    bool has_section_name_table =
+        header.section_name_table_index != 0;
+
+    Elf64SectionHeader section_name_table = {0};
+
+    if (has_section_name_table) {
+        if (!elf_decode_section_header(
+                &view,
+                &header,
+                header.section_name_table_index,
+                &section_name_table
+            )) {
+            fprintf(
+                stderr,
+                "%s: failed to decode section-name table\n",
+                argv[1]
+            );
+
+            file_buffer_destroy(&buffer);
+            return EXIT_FAILURE;
+        }
+
+        ElfSectionHeaderStatus name_table_status =
+            elf_validate_section_header(
+                &view,
+                &section_name_table
+            );
+
+        if (name_table_status != ELF_SECTION_HEADER_OK) {
+            fprintf(
+                stderr,
+                "%s: section-name table: %s\n",
+                argv[1],
+                section_header_status_message(name_table_status)
+            );
+
+            file_buffer_destroy(&buffer);
+            return EXIT_FAILURE;
+        }
     }
 
     for (uint16_t index = 0;
@@ -269,6 +329,31 @@ int main(int argc, char *argv[]) {
 
             file_buffer_destroy(&buffer);
             return EXIT_FAILURE;
+        }
+        
+        if (has_section_name_table) {
+            ByteView section_name = {0};
+
+            ElfSectionNameStatus name_status =
+                elf_resolve_section_name(
+                    &view,
+                    &section_name_table,
+                    &section_header,
+                    &section_name
+                );
+
+            if (name_status != ELF_SECTION_NAME_OK) {
+                fprintf(
+                    stderr,
+                    "%s: section header %u: %s\n",
+                    argv[1],
+                    (unsigned int)index,
+                    section_name_status_message(name_status)
+                );
+
+                file_buffer_destroy(&buffer);
+                return EXIT_FAILURE;
+            }
         }
     }
 

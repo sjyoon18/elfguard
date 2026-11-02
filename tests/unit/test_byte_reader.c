@@ -4,6 +4,63 @@
 #include <stdint.h>
 #include <stdio.h>
 
+static void test_c_string_reader(void) {
+    const uint8_t bytes[] = {
+        '\0',
+        'a', 'b', '\0',
+        'x', '\0',
+        'y'
+    };
+
+    ByteView view = {
+        .data = bytes,
+        .size = sizeof(bytes)
+    };
+
+    ByteView result = {0};
+
+    assert(byte_view_read_c_string(&view, 0, &result));
+    assert(result.data == bytes);
+    assert(result.size == 0);
+
+    assert(byte_view_read_c_string(&view, 1, &result));
+    assert(result.data == bytes + 1);
+    assert(result.size == 2);
+    assert(result.data[0] == 'a');
+    assert(result.data[1] == 'b');
+
+    assert(byte_view_read_c_string(&view, 3, &result));
+    assert(result.data == bytes + 3);
+    assert(result.size == 0);
+
+    assert(byte_view_read_c_string(&view, 4, &result));
+    assert(result.data == bytes + 4);
+    assert(result.size == 1);
+    assert(result.data[0] == 'x');
+
+    const uint8_t sentinel = 0xcc;
+
+    result.data = &sentinel;
+    result.size = SIZE_MAX;
+
+    assert(!byte_view_read_c_string(&view, 6, &result));
+    assert(result.data == &sentinel);
+    assert(result.size == SIZE_MAX);
+
+    assert(!byte_view_read_c_string(&view, 7, &result));
+    assert(result.data == &sentinel);
+    assert(result.size == SIZE_MAX);
+
+    assert(!byte_view_read_c_string(
+        &view,
+        SIZE_MAX,
+        &result
+    ));
+
+    assert(result.data == &sentinel);
+    assert(result.size == SIZE_MAX);
+}
+
 int main(void) {
     uint8_t bytes[8] = {
         0x7f, 0x45, 0x4c, 0x46,
@@ -109,6 +166,8 @@ int main(void) {
 
     assert(!byte_view_read_u64_le(&empty, 0, &result_u64));
     assert(result_u64 == UINT64_C(0xcccccccccccccccc));
+
+    test_c_string_reader();
 
     printf("All byte reader tests passed.\n");
 

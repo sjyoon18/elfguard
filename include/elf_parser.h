@@ -92,6 +92,14 @@ typedef enum {
     ELF_SECTION_HEADER_SIZE_NOT_MULTIPLE_OF_ENTRY_SIZE
 } ElfSectionHeaderStatus;
 
+typedef enum {
+    ELF_SECTION_NAME_OK = 0,
+    ELF_SECTION_NAME_TABLE_WRONG_TYPE,
+    ELF_SECTION_NAME_TABLE_OUT_OF_BOUNDS,
+    ELF_SECTION_NAME_OFFSET_OUT_OF_BOUNDS,
+    ELF_SECTION_NAME_UNTERMINATED
+} ElfSectionNameStatus;
+
 ElfIdentStatus elf_validate_identification(const ByteView *view);
 
 bool elf_decode_header(
@@ -132,6 +140,13 @@ bool elf_decode_section_header(
 ElfSectionHeaderStatus elf_validate_section_header(
     const ByteView *view,
     const Elf64SectionHeader *section_header
+);
+
+ElfSectionNameStatus elf_resolve_section_name(
+    const ByteView *view,
+    const Elf64SectionHeader *name_table,
+    const Elf64SectionHeader *section_header,
+    ByteView *result
 );
 
 #endif

@@ -90,3 +90,29 @@ bool byte_view_read_u64_le(
 
     return true;
 }
+
+bool byte_view_read_c_string(
+    const ByteView *view,
+    size_t offset,
+    ByteView *result
+) {
+    if (offset >= view->size) {
+        return false;
+    }
+
+    for (size_t index = offset;
+         index < view->size;
+         index++) {
+            if (view->data[index] == '\0') {
+                ByteView decoded = {
+                    .data = view->data + offset,
+                    .size = index - offset
+                };
+
+            *result = decoded;
+            return true;
+            }
+         }
+
+    return false;
+}

@@ -40,4 +40,10 @@ bool byte_view_read_u64_le(
     uint64_t *result
 );
 
+bool byte_view_read_c_string(
+    const ByteView *view,
+    size_t offset,
+    ByteView *result
+);
+
 #endif
