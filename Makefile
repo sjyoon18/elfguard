@@ -1,8 +1,12 @@
 CC = clang
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -g -Iinclude
 SANITIZER_FLAGS = -fsanitize=address,undefined -fno-omit-frame-pointer
+FUZZER_FLAGS = -O1 -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer
+
+FUZZ_CC ?= $(CC)
 
 .PHONY: test test-sanitize test-integration clean
+
 
 elfguard: src/main.c src/file_buffer.c src/byte_reader.c src/elf_parser.c include/file_buffer.h include/byte_reader.h include/elf_parser.h
 	$(CC) $(CFLAGS) \
@@ -31,6 +35,12 @@ test_elf_parser_sanitize: tests/unit/test_elf_parser.c src/elf_parser.c src/byte
 		src/elf_parser.c src/byte_reader.c \
 		-o test_elf_parser_sanitize
 
+fuzz_elf_parser: tests/fuzz/fuzz_elf_parser.c src/elf_parser.c src/byte_reader.c include/elf_parser.h include/byte_reader.h
+	$(FUZZ_CC) $(CFLAGS) $(FUZZER_FLAGS) \
+		tests/fuzz/fuzz_elf_parser.c \
+		src/elf_parser.c src/byte_reader.c \
+		-o fuzz_elf_parser
+
 test: test_byte_reader test_elf_parser
 	./test_byte_reader
 	./test_elf_parser
@@ -43,5 +53,5 @@ test-integration: elfguard
 	python3 tests/integration/test_cli.py
 
 clean:
-	rm -f elfguard test_byte_reader test_byte_reader_sanitize test_elf_parser test_elf_parser_sanitize
+	rm -f elfguard fuzz_elf_parser test_byte_reader test_byte_reader_sanitize test_elf_parser test_elf_parser_sanitize
 	rm -rf elfguard.dSYM test_byte_reader.dSYM test_byte_reader_sanitize.dSYM test_elf_parser.dSYM test_elf_parser_sanitize.dSYM

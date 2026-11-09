@@ -3,5 +3,8 @@
 /test_byte_reader_sanitize
 /test_elf_parser
 /test_elf_parser_sanitize
+fuzz_elf_parser
+tests/fuzz/findings/
+tests/fuzz/corpus/
 .DS_Store
 *.dSYM/
