@@ -51,10 +51,6 @@ int LLVMFuzzerTestOneInput(
             return 0;
         }
 
-        /*
-         * Exercise the security-policy check too.
-         * Either result is acceptable to the fuzzer.
-         */
         (void)elf_program_header_is_writable_executable(
             &program_header
         );
