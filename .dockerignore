@@ -1,0 +1,13 @@
+.git/
+.DS_Store
+*.dSYM/
+
+/elfguard
+/fuzz_elf_parser
+/test_byte_reader
+/test_byte_reader_sanitize
+/test_elf_parser
+/test_elf_parser_sanitize
+
+tests/fuzz/corpus/
+tests/fuzz/findings/
