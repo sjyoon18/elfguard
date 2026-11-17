@@ -1,46 +1,197 @@
-# elfguard
+# ELFGuard
 
-A defensive ELF64 inspector written in C, built to explore binary parsing, memory safety, fuzzing, and vulnerability analysis.
+ELFGuard is a defensive ELF64 parser and structural inspector written in C. It treats every input byte as untrusted and validates offsets, sizes, counts, alignments, and table entries before using them.
 
-## Motivation
+## Why I Built It
 
-After building CacheCore, I wanted to examine a different security boundary: how a program safely interprets attacker-controlled bytes. This project focuses on explicit validation and reproducible failures rather than implementing every ELF feature.
+After building a networked cache server, I wanted to explore a different security boundary: safely interpreting an attacker-controlled binary format.
 
-## Initial Scope
+ELFGuard taught me that checking whether memory can be read safely is only the first layer. A parser must also determine whether the relationships described by the input—such as file ranges, table locations, and alignment requirements—are structurally valid.
 
-- Inspect ELF64, little-endian files targeting x86-64.
-- Validate identification bytes and decode the main ELF header.
-- Inspect program headers, followed by selected section information.
-- Report malformed input, unsupported formats, and file-access errors clearly.
-- Read files without executing or dynamically loading their contents.
+The goal is not to support every ELF feature. It is to build a deliberately limited parser whose assumptions and failure behavior are explicit.
 
-Some valid ELF files will be outside this deliberately limited scope.
+## What It Does
 
-## Threat Model
+ELFGuard currently:
 
-An attacker may control every byte of the input file, including offsets, lengths, counts, and identifiers.
+- Reads regular files into a bounded, owned memory buffer.
+- Limits input files to 64 MiB.
+- Supports ELF64, little-endian files targeting x86-64.
+- Accepts relocatable, executable, and shared-object ELF types.
+- Decodes fields explicitly instead of casting file bytes to C structures.
+- Validates the ELF header and program- and section-header table layouts.
+- Validates program-header file ranges, sizes, and alignments.
+- Validates section-header ranges, alignments, and entry sizes.
+- Handles sections such as `SHT_NOBITS` that occupy memory but no file bytes.
+- Resolves section names through the section-name string table using bounded views.
+- Warns about program headers with both writable and executable permissions.
+- Rejects malformed or unsupported input without executing it.
 
-The parser must not assume that metadata is truthful. The design aims to prevent out-of-bounds access, arithmetic overflow, excessive allocation, and uncontrolled failure when processing malformed files.
+## Architecture
 
-## Safety Invariants
+```text
+Input file
+    |
+    v
+Bounded FileBuffer
+    |
+    v
+ByteView and explicit little-endian readers
+    |
+    v
+ELF identification and main header
+    |
+    v
+Table layout validation
+    |
+    +--> Program headers
+    |       |
+    |       +--> ranges, sizes, alignment
+    |       +--> writable + executable warning
+    |
+    +--> Section headers
+            |
+            +--> ranges, alignment, entry sizes
+            +--> bounded section-name resolution
+```
 
-- Validate the complete byte range before every read.
-- Check arithmetic before using results as sizes or offsets.
-- Decode fields explicitly instead of casting file bytes to C structures.
-- Bound input size and resource consumption.
-- Keep buffer ownership and cleanup responsibilities explicit.
-- Distinguish safe-to-read data from valid ELF data.
+The file loader owns the allocated memory. The parser works through non-owning `ByteView` values, which pair a pointer with an explicit size.
 
-## First Milestone
+## Security Design
 
-Build `elfguard <path>` to read a file into a bounded memory buffer, print the number of bytes read, and release all resources.
+The parser follows several invariants:
 
-ELF parsing comes afterward.
+- Prove that a complete byte range exists before reading it.
+- Avoid unchecked `offset + length` arithmetic.
+- Decode multibyte fields explicitly in little-endian order.
+- Never interpret attacker-controlled bytes by casting them to ELF structures.
+- Decode into a temporary object and publish the result only after every field succeeds.
+- Leave output objects unchanged when an operation fails.
+- Treat every offset, size, count, index, and alignment as untrusted.
+- Distinguish malformed structure from suspicious-but-structurally-valid properties.
 
-## Non-Goals
+For example, a writable and executable program header produces a warning rather than automatic rejection. That is a policy signal, while an out-of-bounds table is a structural error.
 
-This project is not an executable loader, linker, disassembler, malware detector, or production security product.
+## Build and Run
 
-## Status
+Requirements:
 
-Initial planning. Parsing, testing, and security evaluation have not yet been implemented.
+- A C11 compiler
+- `make`
+- Python 3 for CLI integration tests
+- Docker for the reproducible fuzzing environment
+
+Build ELFGuard:
+
+```sh
+make
+```
+
+Inspect a file:
+
+```sh
+./elfguard <file>
+```
+
+Example:
+
+```text
+sample.o: valid supported ELF64 file
+```
+
+A suspicious permission combination is reported separately:
+
+```text
+wx_load.elf: warning: program header 0 has writable and executable permissions
+wx_load.elf: valid supported ELF64 file
+```
+
+A successful inspection means the file satisfies ELFGuard’s supported structural checks. It does not mean the file is trustworthy or safe to execute.
+
+## Testing
+
+Run the unit tests:
+
+```sh
+make test
+```
+
+Run the unit tests with AddressSanitizer and UndefinedBehaviorSanitizer:
+
+```sh
+make test-sanitize
+```
+
+Run the command-line integration tests:
+
+```sh
+make test-integration
+```
+
+The test suite covers boundary reads, integer edge cases, truncated structures, invalid table layouts, program and section headers, section-name resolution, and unchanged outputs after failed decoding.
+
+## Fuzzing
+
+ELFGuard includes a libFuzzer harness that passes generated byte arrays through the complete parsing pipeline.
+
+The fuzzing build combines:
+
+- libFuzzer for coverage-guided input generation
+- AddressSanitizer for memory-access errors
+- UndefinedBehaviorSanitizer for undefined C behavior
+- An ELF-aware mutation dictionary
+- A corpus of inputs that reach useful parser behavior
+
+Build the fuzzing image:
+
+```sh
+docker build -f Dockerfile.fuzz -t elfguard-fuzz .
+```
+
+Run a 60-second campaign:
+
+```sh
+docker run --rm -it \
+    -v "$PWD":/work \
+    elfguard-fuzz \
+    ./tests/fuzz/run_fuzz.sh 60
+```
+
+Short campaigns have processed millions of generated inputs without producing a sanitizer failure. This increases confidence in the parser, but it does not prove that the implementation is free of vulnerabilities.
+
+## Repository Layout
+
+```text
+include/                 Public data structures and function declarations
+src/
+  file_buffer.c          Bounded file loading and ownership
+  byte_reader.c          Range checks and explicit byte decoding
+  elf_parser.c           ELF decoding and structural validation
+  main.c                 Command-line inspection pipeline
+tests/
+  unit/                  Focused parser and byte-reader tests
+  integration/           End-to-end CLI tests
+  fixtures/              Valid and intentionally malformed ELF samples
+  fuzz/                  libFuzzer harness, dictionary, and runner
+Dockerfile.fuzz          Reproducible Linux fuzzing environment
+Makefile                 Build, test, sanitizer, and fuzzing targets
+```
+
+## Scope and Limitations
+
+ELFGuard intentionally supports a limited subset of ELF:
+
+- ELF64 only
+- Little-endian encoding only
+- x86-64 only
+- Relocatable, executable, and shared-object file types
+- No ELF extended numbering
+- No complete validation of every ELF type-specific relationship
+
+ELFGuard is not a loader, linker, disassembler, malware detector, or production security product. It never executes or dynamically loads the inspected file.
+
+## What I Learned
+
+This project changed how I think about parsing untrusted data.
+
+The most important lesson was that safe parsing requires more than individual bounds checks. The parser must preserve invariants across offsets, sizes, counts, alignments, and related tables. I also learned to separate structural validation from security policy and to use unit tests, integration tests, sanitizers, and fuzzing as complementary forms of evidence rather than treating any one of them as proof of correctness.
